@@ -1,0 +1,3 @@
+[submodule "book-links"]
+	path = book-links
+	url = git@github.com:vhf/free-programming-books.git
