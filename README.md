@@ -5,6 +5,8 @@
 * ncurses - for selecting the books
 * toml or something for storing user selection and correct checksums
 * twox-hash - for checking integrity of files and generation checksums
+* zip and tar - for creating distributable packages
+* clippy - good code
 
 ##### Plans
 * UI of some sort to pick categories?
