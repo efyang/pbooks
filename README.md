@@ -1,7 +1,7 @@
 ### pbooks - downloads selected books from vhf/free-programming-books
 
 ##### Crates to use
-* Hyper - to download the books
+* iron - to download the books and serve the books if need be (concurrent)
 * ncurses - for selecting the books
 * toml or something for storing user selection and correct checksums
 * twox-hash - for checking integrity of files and generation checksums
