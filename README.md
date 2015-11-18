@@ -26,7 +26,9 @@
 5. Package downloaded files into .tar.xz and .zip files
   * All files in ```downloaded``` directory or only the ones in the manifest?
   * Maximum compression ratio (If specifiable)
-6. Finished
+6. OPTIONAL (should be specifiable in args) - Serve books
+  * Spawn hyper server
+  * On connect spawn new thread
 
 ##### Plans
 * UI of some sort to pick categories?
