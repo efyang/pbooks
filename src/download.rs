@@ -9,7 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::hash::{Hash, SipHasher, Hasher};
 
-#[allow(dead_code)]
+//TODO:
+//make downloaded files go in directory directly related to the executable
+//use chrono to get kb/s
+
 pub fn download_pdf_to_default_url_file(url: &str) -> Result<(), String> {
     let filename;
     match get_url_file(url) {
@@ -24,7 +27,6 @@ pub fn download_pdf_to_default_url_file(url: &str) -> Result<(), String> {
     download_pdf_to_file(url, &filename)
 }
 
-#[allow(dead_code)]
 pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
     let mut outfile = BufWriter::new(File::create(outputfile).expect(&format!("Failed to create file {}", outputfile)));
     let client = Client::new();
