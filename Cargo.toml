@@ -2,3 +2,6 @@
 name = "pbooks"
 version = "0.1.0"
 authors = ["Edward Yang <edward.yang6771@gmail.com>"]
+
+[dependencies]
+hyper = "0.6"
