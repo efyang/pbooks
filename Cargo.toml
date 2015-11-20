@@ -5,3 +5,5 @@ authors = ["Edward Yang <edward.yang6771@gmail.com>"]
 
 [dependencies]
 hyper = "0.6"
+time = "0.1.34"
+term-painter = "0.2.1"

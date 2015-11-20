@@ -3,6 +3,8 @@ name = "pbooks"
 version = "0.1.0"
 dependencies = [
  "hyper 0.6.16 (registry+https://github.com/rust-lang/crates.io-index)",
+ "term-painter 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "time 0.1.34 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -204,6 +206,23 @@ version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "rand 0.3.12 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "term"
+version = "0.2.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "kernel32-sys 0.2.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "winapi 0.2.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "term-painter"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "term 0.2.13 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
