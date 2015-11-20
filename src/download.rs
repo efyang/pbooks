@@ -128,6 +128,28 @@ fn print_dl_status(done: u64, total: u64, totalstr: &str) {
     }
 }
 
+//formatting is in format "<start><filled><filledhead><empty><end>"
+//example: "[=>-]"
+fn make_progress_bar(formatting: &str, barlength: usize, percent: f64) -> String {
+    let mut formatiter = formatting.chars();
+    //let startchar = formatting[0];
+    //let fillchar = formatting[1];
+    //let headchar = formatting[2];
+    //let emptychar = formatting[3];
+    //let endchar = formatting[4];
+    let startchar = formatiter.next().unwrap();
+    let fillchar = formatiter.next().unwrap();
+    let headchar = formatiter.next().unwrap();
+    let emptychar = formatiter.next().unwrap();
+    let endchar = formatiter.next().unwrap();
+
+    let proglength = barlength - 2;
+    //barlength - 2 to account for endings
+    let headidx: usize = (proglength as f64 * (percent as f64/100.0)) as usize;
+    let bar: String = format!("{}{}{}{}{}", startchar, fillchar.to_string().repeat(headidx - 1), headchar, emptychar.to_string().repeat(proglength - headidx), endchar);
+    bar
+}
+
 fn get_url_file(url: &str) -> Option<&str> {
     url.split('/').last()
 }
