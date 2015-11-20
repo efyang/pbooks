@@ -113,6 +113,7 @@ fn is_pdf(r: &Response) -> bool {
     }
 }
 
+//maybe use io::stdout() to prevent the weird cursor?
 fn print_dl_status(done: u64, total: u64, totalstr: &str) {
     let dl = BrightGreen.bold().paint(" Downloaded");
     let aptconversion = convert_to_apt_unit(done);
