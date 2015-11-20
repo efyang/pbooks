@@ -135,11 +135,9 @@ fn convert_to_apt_unit(bytelength: u64) -> String {
     let unit;
     let divisor;
     if bytelength < 1024 {
-        //byte
         divisor = 1;
         unit = "B";
     } else if bytelength >= 1024 && bytelength < 1048576 {
-        //kibibyte
         divisor = 1024;
         unit = "KiB";
     } else if bytelength >= 1048576 && bytelength < 1073741800 {
