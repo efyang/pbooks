@@ -15,6 +15,7 @@ use term_painter::Color::*;
 
 //TODO: make downloaded files go in directory directly related to the executable
 //use time to get kb/s remove any raw unwrap()s as possible
+//sigint for thread
 
 #[cfg(unix)]
 const FILE_SEP: &'static str = "/";
@@ -49,7 +50,7 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
         0
     });
     let contentstr = convert_to_apt_unit(contentlen);
-    println!(" {} {} from url: \"{}\" to \"{}\"", 
+    println!(" {} {} from url: \"{}\" to \"{}\"",
              BrightGreen.bold().paint("Downloading"), contentstr, url, outputfile);
     let bytes_read = Arc::new(Mutex::new(0));
     let stop_printing = Arc::new(Mutex::new(false));
@@ -66,8 +67,8 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
                 print_dl_status(*bytes_read, contentlen, &contentstr);
                 if *stop_printing.lock().unwrap() {
                     print_dl_status(*bytes_read, contentlen, &contentstr);
-                   println!("\n   {} Download of file \"{}\"in {} seconds", 
-                             BrightGreen.bold().paint("Completed"), outputfile, 
+                   println!("\n   {} Download of file \"{}\"in {:.5} seconds",
+                             BrightGreen.bold().paint("Completed"), outputfile,
                              round_to_places(precise_time_s() - start_time, 5));
                     break;
                 }
@@ -118,11 +119,11 @@ fn print_dl_status(done: u64, total: u64, totalstr: &str) {
     let dl = BrightGreen.bold().paint(" Downloaded");
     let aptconversion = convert_to_apt_unit(done);
     if total == 0 {
-        print!("\r {dl} {dledbytes} of unknown | unknown% complete          ", 
+        print!("\r {dl} {dledbytes} of unknown | unknown% complete          ",
                dl = dl, dledbytes = aptconversion);
     } else {
-        let percentdone: u64 = ((done as f64/total as f64) * 100f64) as u64;
-        print!("\r {dl} {dledbytes} of {length} | {percent}% complete          ", 
+        let percentdone: f64 = round_to_places(((done as f64/total as f64) * 100f64), 2);
+        print!("\r {dl} {dledbytes} of {length} | {percent:.2}% complete          ",
             dl = dl, dledbytes = aptconversion, length = totalstr, percent = percentdone);
     }
 }
@@ -147,7 +148,7 @@ fn convert_to_apt_unit(bytelength: u64) -> String {
         divisor = 1073741800;
         unit = "GiB";
     }
-    format!("{:.3} {}", round_to_places(bytelength as f64/divisor as f64, 3), unit)
+    format!("{:.2} {}", round_to_places(bytelength as f64/divisor as f64, 2), unit)
 }
 
 const ZERO: &'static str = "0";
