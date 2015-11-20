@@ -8,12 +8,12 @@ use std::thread;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::hash::{Hash, SipHasher, Hasher};
-use time::{precise_time_s, now};
+use std::iter;
+use time::precise_time_s;
 use term_painter::ToStyle;
 use term_painter::Color::*;
 
-//TODO:
-//make downloaded files go in directory directly related to the executable
+//TODO: make downloaded files go in directory directly related to the executable
 //use time to get kb/s remove any raw unwrap()s as possible
 
 #[cfg(unix)]
@@ -48,9 +48,9 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
         println!("Warning: Failed to get file download size");
         0
     });
-    let kbcontentlen = contentlen/1024;
-    println!(" {} {} KB from url: \"{}\" to \"{}\"", 
-             BrightGreen.bold().paint("Downloading"), kbcontentlen, url, outputfile);
+    let contentstr = convert_to_apt_unit(contentlen);
+    println!(" {} {} from url: \"{}\" to \"{}\"", 
+             BrightGreen.bold().paint("Downloading"), contentstr, url, outputfile);
     let bytes_read = Arc::new(Mutex::new(0));
     let stop_printing = Arc::new(Mutex::new(false));
 
@@ -63,11 +63,12 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
             loop {
                 thread::sleep(Duration::from_millis(0));
                 let bytes_read = bytes_read.lock().unwrap();
-                print_dl_status(*bytes_read, contentlen, kbcontentlen);
+                print_dl_status(*bytes_read, contentlen, &contentstr);
                 if *stop_printing.lock().unwrap() {
-                    print_dl_status(*bytes_read, contentlen, kbcontentlen);
+                    print_dl_status(*bytes_read, contentlen, &contentstr);
                    println!("\n   {} Download of file \"{}\"in {} seconds", 
-                             BrightGreen.bold().paint("Completed"), outputfile, precise_time_s() - start_time);
+                             BrightGreen.bold().paint("Completed"), outputfile, 
+                             round_to_places(precise_time_s() - start_time, 5));
                     break;
                 }
             }
@@ -84,6 +85,8 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
     *stop_printing = true;
     return Ok(());
 }
+
+
 
 fn get_content_length(r: &Response) -> Option<u64> {
     match r.headers.get::<ContentLength>() {
@@ -110,18 +113,58 @@ fn is_pdf(r: &Response) -> bool {
     }
 }
 
-fn print_dl_status(done: u64, total: u64, kbtotal: u64) {
+fn print_dl_status(done: u64, total: u64, totalstr: &str) {
     let dl = BrightGreen.bold().paint(" Downloaded");
+    let aptconversion = convert_to_apt_unit(done);
     if total == 0 {
-        print!("\r {dl} {dledbytes} KB of unknown KB | unknown% complete", 
-               dl = dl, dledbytes = done/1024);
+        print!("\r {dl} {dledbytes} of unknown | unknown% complete          ", 
+               dl = dl, dledbytes = aptconversion);
     } else {
         let percentdone: u64 = ((done as f64/total as f64) * 100f64) as u64;
-        print!("\r {dl} {dledbytes} KB of {kblength} KB | {percent}% complete", 
-            dl = dl, dledbytes = done/1024, kblength = kbtotal, percent = percentdone);
+        print!("\r {dl} {dledbytes} of {length} | {percent}% complete          ", 
+            dl = dl, dledbytes = aptconversion, length = totalstr, percent = percentdone);
     }
 }
 
 fn get_url_file(url: &str) -> Option<&str> {
     url.split('/').last()
-}    
+}
+
+fn convert_to_apt_unit(bytelength: u64) -> String {
+    let unit;
+    let divisor;
+    if bytelength < 1024 {
+        //byte
+        divisor = 1;
+        unit = "B";
+    } else if bytelength >= 1024 && bytelength < 1048576 {
+        //kibibyte
+        divisor = 1024;
+        unit = "KiB";
+    } else if bytelength >= 1048576 && bytelength < 1073741800 {
+        divisor = 1048576;
+        unit = "MiB";
+    } else {
+        divisor = 1073741800;
+        unit = "GiB";
+    }
+    format!("{:.3} {}", round_to_places(bytelength as f64/divisor as f64, 3), unit)
+}
+
+const ZERO: &'static str = "0";
+
+//places refers to places after decimal point
+fn round_to_places(n: f64, places: usize) -> f64 {
+    let div = ("1".to_string() + &ZERO.to_string().repeat(places)).parse::<f64>().unwrap();
+    (n * div).round() / div
+}
+
+trait Repeatable {
+    fn repeat(&self, times: usize) -> String;
+}
+
+impl Repeatable for String {
+    fn repeat(&self, times: usize) -> String {
+        iter::repeat(self).take(times).map(|s| s.clone()).collect::<String>()
+    }
+}
