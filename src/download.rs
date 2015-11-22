@@ -1,7 +1,7 @@
 use hyper::client::*;
-use hyper::header::{ContentLength, ContentType};
+use hyper::header::ContentLength;
 use hyper::mime::Mime;
-use std::fs::File;
+use std::fs::{File, rename};
 use std::io::prelude::*;
 use std::io::BufWriter;
 use std::thread;
@@ -12,6 +12,9 @@ use std::iter;
 use time::precise_time_s;
 use term_painter::ToStyle;
 use term_painter::Color::*;
+use terminal_size::{Width, Height, terminal_size};
+
+use std::io::stdout;
 
 //TODO: make downloaded files go in directory directly related to the executable
 //use time to get kb/s remove any raw unwrap()s as possible
@@ -38,11 +41,11 @@ pub fn download_pdf_to_default_url_file(url: &str) -> Result<(), String> {
 }
 
 pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
-    let mut outfile = BufWriter::new(File::create(outputfile)
+    let mut outfile = BufWriter::new(File::create(format!("{}.tmp", outputfile))
                                      .expect(&format!("Failed to create file {}", outputfile)));
     let client = Client::new();
     let stream = client.get(url).send().unwrap();
-    if !is_pdf(&stream) {
+    if !is_pdf(url) {
         return Err("Not a valid PDF file url".to_string());
     }
     let contentlen = get_content_length(&stream).unwrap_or_else(|| {
@@ -64,12 +67,10 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
             loop {
                 thread::sleep(Duration::from_millis(0));
                 let bytes_read = bytes_read.lock().unwrap();
-                print_dl_status(*bytes_read, contentlen, &contentstr);
+                print_dl_status(&outputfile, *bytes_read, contentlen, &contentstr);
                 if *stop_printing.lock().unwrap() {
-                    print_dl_status(*bytes_read, contentlen, &contentstr);
-                   println!("\n   {} Download of file \"{}\"in {:.5} seconds",
-                             BrightGreen.bold().paint("Completed"), outputfile,
-                             round_to_places(precise_time_s() - start_time, 5));
+                    print_dl_status(&outputfile, *bytes_read, contentlen, &contentstr);
+                    print_completed_dl(start_time, outputfile);
                     break;
                 }
             }
@@ -84,6 +85,7 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
 
     let mut stop_printing = stop_printing.lock().unwrap();
     *stop_printing = true;
+    rename(format!("{}.tmp", outputfile), outputfile).expect("Failed to rename file");
     return Ok(());
 }
 
@@ -99,54 +101,74 @@ fn get_content_length(r: &Response) -> Option<u64> {
     }
 }
 
-fn is_pdf(r: &Response) -> bool {
-    match r.headers.get::<ContentType>() {
-        Some(c) => {
-            let ContentType(ref contenttype) = *c;
-            let pdf: Mime = "application/pdf".parse().unwrap();
-            if contenttype == &pdf {
-                true
-            } else {
-                false
-            }
-        },
-        None => false,
-    }
+fn is_pdf(url: &str) -> bool {
+    url.to_lowercase().contains(".pdf")
+    //match r.headers.get::<ContentType>() {
+        //Some(c) => {
+            //let ContentType(ref contenttype) = *c;
+            //let pdf: Mime = "application/pdf".parse().unwrap();
+            //if contenttype == &pdf {
+                //true
+            //} else {
+                //false
+            //}
+        //},
+        //None => false,
+    //} ||
+    //match r.headers.get::<FileName>
 }
 
-//maybe use io::stdout() to prevent the weird cursor?
-fn print_dl_status(done: u64, total: u64, totalstr: &str) {
-    let dl = BrightGreen.bold().paint(" Downloaded");
-    let aptconversion = convert_to_apt_unit(done);
+fn print_completed_dl(start_time: f64, filename: String) {
+    println!("\n   {} Download of file \"{}\" in {:.5} seconds",
+             BrightGreen.bold().paint("Completed"), filename,
+             round_to_places(precise_time_s() - start_time, 5));
+}
+
+const PBAR_FORMAT: &'static str = "[██ ]";
+const PBAR_LENGTH: usize = 35;
+
+fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str) {
+    let status = " Downloaded";
+    let dl = BrightGreen.bold().paint(status);
+    let aptconversion = convert_to_apt_unit(done).autopad(11);
+    let msg;
+    let vmsg;
     if total == 0 {
-        print!("\r {dl} {dledbytes} of unknown | unknown% complete          ",
-               dl = dl, dledbytes = aptconversion);
+        let pbar = make_progress_bar(PBAR_FORMAT, PBAR_LENGTH, 0.0);
+        msg = format!("{dledbytes} / unknown", dledbytes = aptconversion);
+        vmsg = format!("{pbar} unknown%", pbar = pbar);
     } else {
         let percentdone: f64 = round_to_places(((done as f64/total as f64) * 100f64), 2);
-        print!("\r {dl} {dledbytes} of {length} | {percent:.2}% complete          ",
-            dl = dl, dledbytes = aptconversion, length = totalstr, percent = percentdone);
+        let strpercent: String = format!("{:.2}", percentdone).to_string().autopad(7);
+        let pbar = make_progress_bar(PBAR_FORMAT, PBAR_LENGTH, percentdone);
+        msg = format!("{dledbytes} / {length}",
+                     dledbytes = aptconversion, length = totalstr); 
+        vmsg = format!("{pbar} {percent}%", percent = strpercent, pbar = pbar);
     }
+    if let Some((Width(w), Height(_))) = terminal_size() {
+        print!("\r {} {} {}", dl, msg, vmsg.pad(
+                //until unicode characters are fixed, do manual length
+                (w as usize - (status.len() + msg.len() + 5) - (PBAR_LENGTH + 8))));
+    } else {
+        print!("\r {} {} {}", dl, msg, vmsg);
+    }
+    let stdout = stdout();
+    let mut handle = stdout.lock();
+    handle.flush().expect("Failed to flush stdout");
 }
 
 //formatting is in format "<start><filled><filledhead><empty><end>"
 //example: "[=>-]"
 fn make_progress_bar(formatting: &str, barlength: usize, percent: f64) -> String {
     let mut formatiter = formatting.chars();
-    //let startchar = formatting[0];
-    //let fillchar = formatting[1];
-    //let headchar = formatting[2];
-    //let emptychar = formatting[3];
-    //let endchar = formatting[4];
     let startchar = formatiter.next().unwrap();
     let fillchar = formatiter.next().unwrap();
     let headchar = formatiter.next().unwrap();
     let emptychar = formatiter.next().unwrap();
     let endchar = formatiter.next().unwrap();
-
     let proglength = barlength - 2;
-    //barlength - 2 to account for endings
     let headidx: usize = (proglength as f64 * (percent as f64/100.0)) as usize;
-    let bar: String = format!("{}{}{}{}{}", startchar, fillchar.to_string().repeat(headidx - 1), headchar, emptychar.to_string().repeat(proglength - headidx), endchar);
+    let bar: String = format!("{}{}{}{}{}", startchar, fillchar.to_string().repeat(headidx), headchar, emptychar.to_string().repeat(proglength - headidx), endchar);
     bar
 }
 
@@ -181,12 +203,25 @@ fn round_to_places(n: f64, places: usize) -> f64 {
     (n * div).round() / div
 }
 
-trait Repeatable {
+trait PrettyPrint {
     fn repeat(&self, times: usize) -> String;
+    fn pad(&self, amnt: usize) -> String;
+    fn autopad(&self, goalchars: usize) -> String;
 }
 
-impl Repeatable for String {
+impl PrettyPrint for str {
     fn repeat(&self, times: usize) -> String {
         iter::repeat(self).take(times).map(|s| s.clone()).collect::<String>()
+    }
+    fn pad(&self, amnt: usize) -> String {
+        format!("{}{}", " ".repeat(amnt), self)
+    }
+    fn autopad(&self, goalchars: usize) -> String {
+        let cursize = self.len();
+        if cursize >= goalchars {
+            self.to_string()
+        } else {
+            self.pad(goalchars - cursize)
+        }
     }
 }
