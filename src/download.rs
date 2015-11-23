@@ -1,6 +1,6 @@
 use hyper::client::*;
 use hyper::header::ContentLength;
-use hyper::mime::Mime;
+// use hyper::mime::Mime;
 use std::fs::{File, rename};
 use std::io::prelude::*;
 use std::io::BufWriter;
@@ -92,14 +92,21 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
     return Ok(());
 }
 
-struct Download {
-    pub url: &str,
-    pub outfile: &str,
+struct Download<'a> {
+    pub url: &'a str,
+    pub outfile: &'a str,
     pub enabled: bool,
 }
 // parallel downloads
 // result is either nothing or vec of failed urls
+#[allow(unused_variables)]
 fn parallel_download_pdfs(urls: Vec<&str>) -> Result<(), Vec<&str>> {
+    unimplemented!();
+}
+
+// &str fail message
+#[allow(unused_variables)]
+fn parallel_download_single(url: &str) -> Result<(), &str> {
     unimplemented!();
 }
 
@@ -125,7 +132,7 @@ fn print_completed_dl(start_time: f64, filename: String) {
 }
 
 const PBAR_FORMAT: &'static str = "[██ ]";
-const PBAR_LENGTH: usize = 35;
+const PBAR_LENGTH: usize = 40;
 
 fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str) {
     let status = " Downloaded";
@@ -146,14 +153,17 @@ fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str) {
                       length = totalstr);
         vmsg = format!("{pbar} {percent}%", percent = strpercent, pbar = pbar);
     }
+    println!("\x1b[1A"); // go up 1 line
+    print!("\x1b[K"); // clear line
+    // print!("\r");
     if let Some((Width(w), Height(_))) = terminal_size() {
-        print!("\r {} {} {}",
+        print!(" {} {} {}",
                dl,
                msg,
                vmsg.pad(// until unicode characters are fixed, do manual length
                         (w as usize - (status.len() + msg.len() + 5) - (PBAR_LENGTH + 8))));
     } else {
-        print!("\r {} {} {}", dl, msg, vmsg);
+        print!(" {} {} {}", dl, msg, vmsg);
     }
     let stdout = stdout();
     let mut handle = stdout.lock();
