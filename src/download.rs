@@ -1,6 +1,5 @@
 use hyper::client::*;
 use hyper::header::ContentLength;
-// use hyper::mime::Mime;
 use std::fs::{File, rename};
 use std::io::prelude::*;
 use std::io::BufWriter;
@@ -10,11 +9,9 @@ use std::time::Duration;
 use std::hash::{Hash, SipHasher, Hasher};
 use std::iter;
 use time::precise_time_s;
-use term_painter::ToStyle;
-use term_painter::Color::*;
 use terminal_size::{Width, Height, terminal_size};
-
 use std::io::stdout;
+use std::sync::mpsc::{channel, Receiver};
 
 // TODO: make downloaded files go in directory directly related to the executable
 // use time to get kb/s remove any raw unwrap()s as possible
@@ -53,11 +50,6 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
         0
     });
     let contentstr = convert_to_apt_unit(contentlen);
-    println!(" {} {} from url: \"{}\" to \"{}\"",
-             BrightGreen.bold().paint("Downloading"),
-             contentstr,
-             url,
-             outputfile);
     let bytes_read = Arc::new(Mutex::new(0));
     let stop_printing = Arc::new(Mutex::new(false));
 
@@ -66,13 +58,22 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
         let stop_printing = stop_printing.clone();
         let outputfile = outputfile.to_string();
         thread::spawn(move || {
+            println!("");
             let start_time = precise_time_s();
             loop {
                 thread::sleep(Duration::from_millis(0));
                 let bytes_read = bytes_read.lock().unwrap();
-                print_dl_status(&outputfile, *bytes_read, contentlen, &contentstr);
+                print_dl_status(&outputfile,
+                                *bytes_read,
+                                contentlen,
+                                &contentstr,
+                                start_time);
                 if *stop_printing.lock().unwrap() {
-                    print_dl_status(&outputfile, *bytes_read, contentlen, &contentstr);
+                    print_dl_status(&outputfile,
+                                    *bytes_read,
+                                    contentlen,
+                                    &contentstr,
+                                    start_time);
                     print_completed_dl(start_time, outputfile);
                     break;
                 }
@@ -99,14 +100,76 @@ struct Download<'a> {
 }
 // parallel downloads
 // result is either nothing or vec of failed urls
+// each thread sends the update message to the main print thread
+// print thread should sort by given id -> append id at head of info?
+// use channels for receiving the messages
+// hashmap -> dlID : current message
+// on recv update
 #[allow(unused_variables)]
 fn parallel_download_pdfs(urls: Vec<&str>) -> Result<(), Vec<&str>> {
     unimplemented!();
 }
 
-// &str fail message
+// String fail message
 #[allow(unused_variables)]
-fn parallel_download_single(url: &str) -> Result<(), &str> {
+fn parallel_download_single(url: &str,
+                            outputfile: &str,
+                            messagerecv: Receiver<String>)
+                            -> Result<(), String> {
+    let mut outfile = BufWriter::new(File::create(format!("{}.tmp", outputfile))
+                                         .expect(&format!("Failed to create file {}", outputfile)));
+    let client = Client::new();
+    let stream = client.get(url).send().unwrap();
+    if !is_pdf(url) {
+        return Err("Not a valid PDF file url".to_string());
+    }
+    let contentlen = get_content_length(&stream).unwrap_or_else(|| {
+        println!("Warning: Failed to get file download size");
+        0
+    });
+    let contentstr = convert_to_apt_unit(contentlen);
+    let bytes_read = Arc::new(Mutex::new(0));
+    let stop_printing = Arc::new(Mutex::new(false));
+
+    {
+        let bytes_read = bytes_read.clone();
+        let stop_printing = stop_printing.clone();
+        let outputfile = outputfile.to_string();
+        thread::spawn(move || {
+            let start_time = precise_time_s();
+            println!("");
+            loop {
+                thread::sleep(Duration::from_millis(0));
+                let bytes_read = bytes_read.lock().unwrap();
+                print_dl_status(&outputfile,
+                                *bytes_read,
+                                contentlen,
+                                &contentstr,
+                                start_time);
+                if *stop_printing.lock().unwrap() {
+                    print_dl_status(&outputfile,
+                                    *bytes_read,
+                                    contentlen,
+                                    &contentstr,
+                                    start_time);
+                    print_completed_dl(start_time, outputfile);
+                    break;
+                }
+            }
+        });
+    }
+
+    for byte in stream.bytes() {
+        let mut bytes_read = bytes_read.lock().unwrap();
+        *bytes_read += 1;
+        outfile.write(&[byte.unwrap()]).unwrap();
+    }
+
+    let mut stop_printing = stop_printing.lock().unwrap();
+    *stop_printing = true;
+    rename(format!("{}.tmp", outputfile), outputfile).expect("Failed to rename file");
+    return Ok(());
+
     unimplemented!();
 }
 
@@ -125,49 +188,51 @@ fn is_pdf(url: &str) -> bool {
 }
 
 fn print_completed_dl(start_time: f64, filename: String) {
-    println!("\n   {} Download of file \"{}\" in {:.5} seconds",
-             BrightGreen.bold().paint("Completed"),
+    println!(" Completed download of file \"{}\" in {:.5} seconds",
              filename,
              round_to_places(precise_time_s() - start_time, 5));
 }
 
-const PBAR_FORMAT: &'static str = "[██ ]";
-const PBAR_LENGTH: usize = 40;
+const PBAR_FORMAT: &'static str = "[=> ]";
+const PBAR_LENGTH: usize = 35;
 
-fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str) {
-    let status = " Downloaded";
-    let dl = BrightGreen.bold().paint(status);
-    let aptconversion = convert_to_apt_unit(done).autopad(11);
-    let msg;
-    let vmsg;
+fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str, start_time: f64) {
+    let dledbytes = convert_to_apt_unit(done).autopad(7);
+    let pbar;
+    let length;
+    let strpercent;
     if total == 0 {
-        let pbar = make_progress_bar(PBAR_FORMAT, PBAR_LENGTH, 0.0);
-        msg = format!("{dledbytes} / unknown", dledbytes = aptconversion);
-        vmsg = format!("{pbar} unknown%", pbar = pbar);
+        pbar = make_progress_bar(PBAR_FORMAT, PBAR_LENGTH, 0.0);
+        length = "N/A";
+        strpercent = "N/A".to_string();
     } else {
         let percentdone: f64 = round_to_places(((done as f64 / total as f64) * 100f64), 2);
-        let strpercent: String = format!("{:.2}", percentdone).to_string().autopad(7);
-        let pbar = make_progress_bar(PBAR_FORMAT, PBAR_LENGTH, percentdone);
-        msg = format!("{dledbytes} / {length}",
-                      dledbytes = aptconversion,
-                      length = totalstr);
-        vmsg = format!("{pbar} {percent}%", percent = strpercent, pbar = pbar);
+        strpercent = format!("{:.2}", percentdone).to_string().autopad(6);
+        pbar = make_progress_bar(PBAR_FORMAT, PBAR_LENGTH, percentdone);
+        length = totalstr;
     }
-    println!("\x1b[1A"); // go up 1 line
-    print!("\x1b[K"); // clear line
-    // print!("\r");
+    let msg = format!("{}/{}", dledbytes, length);
+    let vmsg = format!("{pbar} {percent}%", percent = strpercent, pbar = pbar);
+    clear_lines(1);
     if let Some((Width(w), Height(_))) = terminal_size() {
-        print!(" {} {} {}",
-               dl,
+        println!(" {} {} {} ",
+               filename,
                msg,
-               vmsg.pad(// until unicode characters are fixed, do manual length
-                        (w as usize - (status.len() + msg.len() + 5) - (PBAR_LENGTH + 8))));
+               vmsg.pad((w as usize - (filename.len() + msg.len() + 5) - (PBAR_LENGTH + 8))));
     } else {
-        print!(" {} {} {}", dl, msg, vmsg);
+        println!(" {} {} {} ", filename, msg, vmsg);
     }
     let stdout = stdout();
     let mut handle = stdout.lock();
     handle.flush().expect("Failed to flush stdout");
+}
+
+fn clear_lines(lines: usize) {
+    for _ in 0..lines {
+        //println!("");
+        print!("\x1b[1A");
+        print!("\x1b[K");
+    }
 }
 
 // formatting is in format "<start><filled><filledhead><empty><end>"
@@ -202,16 +267,16 @@ fn convert_to_apt_unit(bytelength: u64) -> String {
         unit = "B";
     } else if bytelength >= 1024 && bytelength < 1048576 {
         divisor = 1024;
-        unit = "KiB";
+        unit = "K";
     } else if bytelength >= 1048576 && bytelength < 1073741800 {
         divisor = 1048576;
-        unit = "MiB";
+        unit = "M";
     } else {
         divisor = 1073741800;
-        unit = "GiB";
+        unit = "G";
     }
-    format!("{:.2} {}",
-            round_to_places(bytelength as f64 / divisor as f64, 2),
+    format!("{:.1}{}",
+            round_to_places(bytelength as f64 / divisor as f64, 1),
             unit)
 }
 
