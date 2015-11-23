@@ -16,9 +16,9 @@ use terminal_size::{Width, Height, terminal_size};
 
 use std::io::stdout;
 
-//TODO: make downloaded files go in directory directly related to the executable
-//use time to get kb/s remove any raw unwrap()s as possible
-//sigint for thread
+// TODO: make downloaded files go in directory directly related to the executable
+// use time to get kb/s remove any raw unwrap()s as possible
+// sigint for thread
 
 #[cfg(unix)]
 const FILE_SEP: &'static str = "/";
@@ -30,19 +30,19 @@ pub fn download_pdf_to_default_url_file(url: &str) -> Result<(), String> {
     let filename;
     match get_url_file(url) {
         Some(u) => filename = u.to_string(),
-        //fallback is just hash of url + filetype
+        // fallback is just hash of url + filetype
         None => {
             let mut s = SipHasher::new();
             url.hash(&mut s);
             filename = s.finish().to_string() + ".pdf";
-        },
+        }
     }
     download_pdf_to_file(url, &filename)
 }
 
 pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
     let mut outfile = BufWriter::new(File::create(format!("{}.tmp", outputfile))
-                                     .expect(&format!("Failed to create file {}", outputfile)));
+                                         .expect(&format!("Failed to create file {}", outputfile)));
     let client = Client::new();
     let stream = client.get(url).send().unwrap();
     if !is_pdf(url) {
@@ -54,7 +54,10 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
     });
     let contentstr = convert_to_apt_unit(contentlen);
     println!(" {} {} from url: \"{}\" to \"{}\"",
-             BrightGreen.bold().paint("Downloading"), contentstr, url, outputfile);
+             BrightGreen.bold().paint("Downloading"),
+             contentstr,
+             url,
+             outputfile);
     let bytes_read = Arc::new(Mutex::new(0));
     let stop_printing = Arc::new(Mutex::new(false));
 
@@ -89,38 +92,35 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
     return Ok(());
 }
 
-
+struct Download {
+    pub url: &str,
+    pub outfile: &str,
+    pub enabled: bool,
+}
+// parallel downloads
+// result is either nothing or vec of failed urls
+fn parallel_download_pdfs(urls: Vec<&str>) -> Result<(), Vec<&str>> {
+    unimplemented!();
+}
 
 fn get_content_length(r: &Response) -> Option<u64> {
     match r.headers.get::<ContentLength>() {
         Some(c) => {
             let ContentLength(contentlen) = *c;
             Some(contentlen)
-        },
+        }
         None => None,
     }
 }
 
 fn is_pdf(url: &str) -> bool {
     url.to_lowercase().contains(".pdf")
-    //match r.headers.get::<ContentType>() {
-        //Some(c) => {
-            //let ContentType(ref contenttype) = *c;
-            //let pdf: Mime = "application/pdf".parse().unwrap();
-            //if contenttype == &pdf {
-                //true
-            //} else {
-                //false
-            //}
-        //},
-        //None => false,
-    //} ||
-    //match r.headers.get::<FileName>
 }
 
 fn print_completed_dl(start_time: f64, filename: String) {
     println!("\n   {} Download of file \"{}\" in {:.5} seconds",
-             BrightGreen.bold().paint("Completed"), filename,
+             BrightGreen.bold().paint("Completed"),
+             filename,
              round_to_places(precise_time_s() - start_time, 5));
 }
 
@@ -138,17 +138,20 @@ fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str) {
         msg = format!("{dledbytes} / unknown", dledbytes = aptconversion);
         vmsg = format!("{pbar} unknown%", pbar = pbar);
     } else {
-        let percentdone: f64 = round_to_places(((done as f64/total as f64) * 100f64), 2);
+        let percentdone: f64 = round_to_places(((done as f64 / total as f64) * 100f64), 2);
         let strpercent: String = format!("{:.2}", percentdone).to_string().autopad(7);
         let pbar = make_progress_bar(PBAR_FORMAT, PBAR_LENGTH, percentdone);
         msg = format!("{dledbytes} / {length}",
-                     dledbytes = aptconversion, length = totalstr); 
+                      dledbytes = aptconversion,
+                      length = totalstr);
         vmsg = format!("{pbar} {percent}%", percent = strpercent, pbar = pbar);
     }
     if let Some((Width(w), Height(_))) = terminal_size() {
-        print!("\r {} {} {}", dl, msg, vmsg.pad(
-                //until unicode characters are fixed, do manual length
-                (w as usize - (status.len() + msg.len() + 5) - (PBAR_LENGTH + 8))));
+        print!("\r {} {} {}",
+               dl,
+               msg,
+               vmsg.pad(// until unicode characters are fixed, do manual length
+                        (w as usize - (status.len() + msg.len() + 5) - (PBAR_LENGTH + 8))));
     } else {
         print!("\r {} {} {}", dl, msg, vmsg);
     }
@@ -157,8 +160,8 @@ fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str) {
     handle.flush().expect("Failed to flush stdout");
 }
 
-//formatting is in format "<start><filled><filledhead><empty><end>"
-//example: "[=>-]"
+// formatting is in format "<start><filled><filledhead><empty><end>"
+// example: "[=>-]"
 fn make_progress_bar(formatting: &str, barlength: usize, percent: f64) -> String {
     let mut formatiter = formatting.chars();
     let startchar = formatiter.next().unwrap();
@@ -167,8 +170,13 @@ fn make_progress_bar(formatting: &str, barlength: usize, percent: f64) -> String
     let emptychar = formatiter.next().unwrap();
     let endchar = formatiter.next().unwrap();
     let proglength = barlength - 2;
-    let headidx: usize = (proglength as f64 * (percent as f64/100.0)) as usize;
-    let bar: String = format!("{}{}{}{}{}", startchar, fillchar.to_string().repeat(headidx), headchar, emptychar.to_string().repeat(proglength - headidx), endchar);
+    let headidx: usize = (proglength as f64 * (percent as f64 / 100.0)) as usize;
+    let bar: String = format!("{}{}{}{}{}",
+                              startchar,
+                              fillchar.to_string().repeat(headidx),
+                              headchar,
+                              emptychar.to_string().repeat(proglength - headidx),
+                              endchar);
     bar
 }
 
@@ -192,12 +200,14 @@ fn convert_to_apt_unit(bytelength: u64) -> String {
         divisor = 1073741800;
         unit = "GiB";
     }
-    format!("{:.2} {}", round_to_places(bytelength as f64/divisor as f64, 2), unit)
+    format!("{:.2} {}",
+            round_to_places(bytelength as f64 / divisor as f64, 2),
+            unit)
 }
 
 const ZERO: &'static str = "0";
 
-//places refers to places after decimal point
+// places refers to places after decimal point
 fn round_to_places(n: f64, places: usize) -> f64 {
     let div = ("1".to_string() + &ZERO.to_string().repeat(places)).parse::<f64>().unwrap();
     (n * div).round() / div
