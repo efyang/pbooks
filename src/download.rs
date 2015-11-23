@@ -60,20 +60,34 @@ pub fn download_pdf_to_file(url: &str, outputfile: &str) -> Result<(), String> {
         thread::spawn(move || {
             println!("");
             let start_time = precise_time_s();
+            let mut update_time = start_time + 0.5;
+            let mut previous_bytes_read = 0;
+            let mut byteaccum = 0;
+            let mut bps = 0;
             loop {
                 thread::sleep(Duration::from_millis(0));
-                let bytes_read = bytes_read.lock().unwrap();
+                let bytes_read = *bytes_read.lock().unwrap();
+                byteaccum += bytes_read - previous_bytes_read;
+                previous_bytes_read = bytes_read;
+                let now = precise_time_s();
+                if now >= update_time {
+                    update_time = now + 0.5;
+                    bps = byteaccum * 2;
+                    byteaccum = 0;
+                }
                 print_dl_status(&outputfile,
-                                *bytes_read,
+                                bytes_read,
                                 contentlen,
                                 &contentstr,
-                                start_time);
+                                start_time,
+                                bps);
                 if *stop_printing.lock().unwrap() {
                     print_dl_status(&outputfile,
-                                    *bytes_read,
+                                    bytes_read,
                                     contentlen,
                                     &contentstr,
-                                    start_time);
+                                    start_time,
+                                    bps);
                     print_completed_dl(start_time, outputfile);
                     break;
                 }
@@ -136,22 +150,36 @@ fn parallel_download_single(url: &str,
         let stop_printing = stop_printing.clone();
         let outputfile = outputfile.to_string();
         thread::spawn(move || {
-            let start_time = precise_time_s();
             println!("");
+            let start_time = precise_time_s();
+            let mut update_time = start_time + 0.5;
+            let mut previous_bytes_read = 0;
+            let mut byteaccum = 0;
+            let mut bps = 0;
             loop {
                 thread::sleep(Duration::from_millis(0));
-                let bytes_read = bytes_read.lock().unwrap();
+                let bytes_read = *bytes_read.lock().unwrap();
+                byteaccum += bytes_read - previous_bytes_read;
+                previous_bytes_read = bytes_read;
+                let now = precise_time_s();
+                if now >= update_time {
+                    update_time = now + 0.5;
+                    bps = byteaccum * 2;
+                    byteaccum = 0;
+                }
                 print_dl_status(&outputfile,
-                                *bytes_read,
+                                bytes_read,
                                 contentlen,
                                 &contentstr,
-                                start_time);
+                                start_time,
+                                bps);
                 if *stop_printing.lock().unwrap() {
                     print_dl_status(&outputfile,
-                                    *bytes_read,
+                                    bytes_read,
                                     contentlen,
                                     &contentstr,
-                                    start_time);
+                                    start_time,
+                                    bps);
                     print_completed_dl(start_time, outputfile);
                     break;
                 }
@@ -169,7 +197,6 @@ fn parallel_download_single(url: &str,
     *stop_printing = true;
     rename(format!("{}.tmp", outputfile), outputfile).expect("Failed to rename file");
     return Ok(());
-
     unimplemented!();
 }
 
@@ -188,7 +215,7 @@ fn is_pdf(url: &str) -> bool {
 }
 
 fn print_completed_dl(start_time: f64, filename: String) {
-    println!(" Completed download of file \"{}\" in {:.5} seconds",
+    println!(" file \"{}\" downloaded in {:.5} seconds",
              filename,
              round_to_places(precise_time_s() - start_time, 5));
 }
@@ -196,8 +223,14 @@ fn print_completed_dl(start_time: f64, filename: String) {
 const PBAR_FORMAT: &'static str = "[=> ]";
 const PBAR_LENGTH: usize = 35;
 
-fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str, start_time: f64) {
+fn print_dl_status(filename: &str,
+                   done: u64,
+                   total: u64,
+                   totalstr: &str,
+                   start_time: f64,
+                   bytes_per_second: u64) {
     let dledbytes = convert_to_apt_unit(done).autopad(7);
+    let bps = format!("{}/s", convert_to_apt_unit(bytes_per_second)).autopad(9);
     let pbar;
     let length;
     let strpercent;
@@ -211,16 +244,17 @@ fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str, start_
         pbar = make_progress_bar(PBAR_FORMAT, PBAR_LENGTH, percentdone);
         length = totalstr;
     }
-    let msg = format!("{}/{}", dledbytes, length);
+    let ratio = format!("{}/{}", dledbytes, length);
     let vmsg = format!("{pbar} {percent}%", percent = strpercent, pbar = pbar);
     clear_lines(1);
     if let Some((Width(w), Height(_))) = terminal_size() {
-        println!(" {} {} {} ",
-               filename,
-               msg,
-               vmsg.pad((w as usize - (filename.len() + msg.len() + 5) - (PBAR_LENGTH + 8))));
+        println!(" {} {} {} {} ",
+                 filename,
+                 ratio,
+                 bps,
+                 vmsg.pad((w as usize - (filename.len() + ratio.len() + 15) - (PBAR_LENGTH + 8))));
     } else {
-        println!(" {} {} {} ", filename, msg, vmsg);
+        println!(" {} {} {} {} ", filename, ratio, bps, vmsg);
     }
     let stdout = stdout();
     let mut handle = stdout.lock();
@@ -229,7 +263,7 @@ fn print_dl_status(filename: &str, done: u64, total: u64, totalstr: &str, start_
 
 fn clear_lines(lines: usize) {
     for _ in 0..lines {
-        //println!("");
+        // println!("");
         print!("\x1b[1A");
         print!("\x1b[K");
     }
@@ -280,11 +314,9 @@ fn convert_to_apt_unit(bytelength: u64) -> String {
             unit)
 }
 
-const ZERO: &'static str = "0";
-
 // places refers to places after decimal point
 fn round_to_places(n: f64, places: usize) -> f64 {
-    let div = ("1".to_string() + &ZERO.to_string().repeat(places)).parse::<f64>().unwrap();
+    let div = (format!("1{}", &"0".repeat(places))).parse::<f64>().unwrap();
     (n * div).round() / div
 }
 
